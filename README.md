@@ -110,6 +110,4 @@ matplotlib>=3.7
 ```
 ---
 
-
 > Este README foi gerado com auxílio de Inteligência Artificial (Claude, Anthropic) e revisado por Ingrid*
-```
