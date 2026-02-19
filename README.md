@@ -98,19 +98,18 @@ O heatmap é salvo automaticamente como `attention_heatmap.png`.
 ├── requirements.txt      # Dependências: numpy>=1.24, matplotlib>=3.7
 └── README.md             # Esta documentação
 
-
+```
 ---
 
 ## Dependências
 
 ```
-
 numpy>=1.24
 matplotlib>=3.7
 
 ```
-
 ---
 
-> 📄 *Este README foi gerado com auxílio de Inteligência Artificial (Claude, Anthropic) e revisado para refletir com precisão o conteúdo dos arquivos do projeto.*
+
+> Este README foi gerado com auxílio de Inteligência Artificial (Claude, Anthropic) e revisado por Ingrid*
 ```
