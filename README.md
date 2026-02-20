@@ -143,7 +143,6 @@ O painel da esquerda é o resultado "saudável": uma distribuição de probabili
 > Dividir por `√d_k` mantém a **variância dos scores igual a 1** independente da dimensão, evitando que o softmax sature e garantindo gradientes úteis durante o aprendizado.
 
 É uma operação simples — uma única divisão — mas matematicamente motivada e essencial para que o mecanismo de atenção funcione corretamente em qualquer escala.
-## Como a Normalização √d_k foi Aplicada
 
 ---
 
