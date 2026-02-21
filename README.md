@@ -24,125 +24,37 @@ python test_attention.py
 python heatmap.py
 ```
 
----
-## Normalização por √d_k — Explicação Detalhada
+## Normalização √d_k no código
 
----
+O produto escalar Q @ K.T cresce em magnitude conforme d_k aumenta, fazendo o softmax colapsar para one-hot e zerando os gradientes. Dividir por √d_k normaliza a variância dos scores de volta para ~1, mantendo a distribuição de atenção suave independente da dimensão do modelo.
 
-### O Problema: Por que os scores explodem?
-
-No mecanismo de atenção, calculamos o produto escalar entre queries e keys:
-
-```
-scores = Q @ Kᵀ
-```
-
-Cada elemento desse resultado é um produto escalar da forma:
-
-```
-score(q, k) = q₁k₁ + q₂k₂ + ... + q_{d_k} · k_{d_k}
-```
-
-Ou seja, é uma **soma de `d_k` termos**. Agora a parte estatística crucial.
-
----
-
-### A Matemática por Trás
-
-Assumindo que os elementos de Q e K são variáveis aleatórias independentes com:
-- **Média = 0**
-- **Variância = 1**
-
-A variância de cada produto `qᵢ · kᵢ` é:
-
-```
-Var(qᵢ · kᵢ) = Var(qᵢ) · Var(kᵢ) = 1 · 1 = 1
-```
-
-Como o score é a **soma de `d_k` termos independentes**, pela linearidade da variância:
-
-```
-Var(score) = Var(q₁k₁) + Var(q₂k₂) + ... + Var(q_{d_k}k_{d_k})
-           = 1 + 1 + ... + 1   (d_k vezes)
-           = d_k
-```
-
-Logo, o desvio padrão do score é **`√d_k`**. Isso significa que quanto maior a dimensão `d_k`, maior a magnitude dos scores — eles crescem na raiz de `d_k`.
-
----
-
-### Por que isso é um problema para o Softmax?
-
-O softmax é definido como:
-
-```
-softmax(xᵢ) = exp(xᵢ) / Σ exp(xⱼ)
-```
-
-Quando os scores têm magnitude muito alta, a função exponencial **satura**: o maior valor domina completamente o resultado e os demais ficam próximos de zero. O softmax colapsa para algo parecido com uma função one-hot:
-
-```
-# d_k pequeno → scores moderados → distribuição suave
-[0.3, 0.4, 0.3] 
-
-# d_k grande → scores enormes → colapso
-[0.001, 0.998, 0.001]  
-```
-
-Isso é conhecido como **colapso do softmax**, e tem duas consequências graves:
-
-1. **Gradientes próximos de zero** — a derivada do softmax saturado é quase nula, impedindo que o modelo aprenda (vanishing gradient).
-2. **Atenção "rígida"** — o modelo sempre foca em apenas um token, perdendo a capacidade de distribuir atenção entre múltiplas posições relevantes.
-
-O **Teste 5** do `test_attention.py` demonstra exatamente isso, comparando a entropia das distribuições com e sem scaling:
+**Em `attention.py`**, a normalização acontece no `forward()`:
 
 ```python
-entropy = lambda w: -np.sum(w * np.log(w + 1e-12), axis=-1).mean()
-h_no = entropy(weights_no_scale)  # entropia baixa → distribuição concentrada
-h_sc = entropy(weights_scaled)    # entropia alta  → distribuição mais suave
-assert h_sc > h_no  # scaling deve aumentar a entropia
-```
-
----
-
-### A Solução: Dividir por √d_k
-
-Se a variância dos scores é `d_k`, basta dividir por `√d_k` para normalizá-la de volta a 1:
-
-```
-Var(score / √d_k) = Var(score) / d_k = d_k / d_k = 1
-```
-
-Isso é exatamente o que o código faz em `attention.py`:
-
-```python
-scaling_factor = np.sqrt(self.d_k)
-scaled_scores = scores / scaling_factor       # variância ≈ 1 agora
+scores = Q @ K.T                        # scores brutos, variância ≈ d_k
+scaling_factor = np.sqrt(self.d_k)      # √8 ≈ 2.828 (no heatmap.py, d_k=8)
+scaled_scores = scores / scaling_factor # variância cai para ~1
 attention_weights = self._softmax(scaled_scores)
 ```
 
-O resultado é que os scores ficam em uma magnitude controlada, independente do valor de `d_k` escolhido. O softmax recebe entradas numa faixa razoável e produz uma distribuição de probabilidade equilibrada e estável.
+**Em `heatmap.py`**, é exibido os scores *antes e depois* exatamente para mostrar esse efeito:
 
----
+```python
+Q = X @ model.W_q
+K = X @ model.W_k
+raw_scores = (Q @ K.T) / np.sqrt(d_k)  # painel direito: scores já normalizados
+```
 
-### Visualização do Efeito
+O painel esquerdo mostra o resultado *após* o softmax — há diferença visual entre valores brutos (coolwarm com positivos e negativos) e pesos normalizados (viridis entre 0 e 1).
 
-O `heatmap.py` mostra esse contraste visualmente nos dois painéis:
+**Em `test_attention.py`**, o teste 5 prova o efeito diretamente:
 
-| Painel | O que mostra | Colormap |
-|--------|-------------|----------|
-| **Esquerdo** | Attention Weights após softmax com scaling | `viridis` (escala 0–1) |
-| **Direito** | Scaled Scores brutos `QKᵀ / √d_k` antes do softmax | `coolwarm` (valores positivos e negativos) |
+```python
+weights_no_scale = attn._softmax(scores)              # sem √d_k → entropia ~0.02
+weights_scaled   = attn._softmax(scores / np.sqrt(d_k))  # com √d_k → entropia ~1.30
+```
 
-O painel da esquerda é o resultado "saudável": uma distribuição de probabilidade contínua onde é possível ver diferentes tons, indicando que a atenção está distribuída — não colapsada.
-
----
-
-### Resumo
-
-> Dividir por `√d_k` mantém a **variância dos scores igual a 1** independente da dimensão, evitando que o softmax sature e garantindo gradientes úteis durante o aprendizado.
-
-É uma operação simples — uma única divisão — mas matematicamente motivada e essencial para que o mecanismo de atenção funcione corretamente em qualquer escala.
+Entropia baixa = softmax colapsado = um token domina tudo. A divisão por `√d_k` é o que mantém a distribuição suave.
 
 ---
 
